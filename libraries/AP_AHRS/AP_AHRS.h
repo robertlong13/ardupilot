@@ -618,6 +618,16 @@ public:
     bool get_fly_forward(void) const {
         return fly_forward;
     }
+    
+    /*
+     * vtol_flight is set by the vehicles to indicate that a VTOL
+     * plane is currently using the VTOL motors for flight (either in
+     * QAssist or in a full hover mode). When in VTOL flight, the
+     * AHRS should be forced to use EKF instead of DCM, like Copter does.
+     */
+    void set_vtol_flight(bool b) {
+        vtol_flight = b;
+    }
 
     /* we modify our behaviour based on what sort of vehicle the
      * vehicle code tells us we are.  This information is also pulled
@@ -827,6 +837,14 @@ private:
      * use to provide additional and/or improved estimates.
      */
     bool fly_forward; // true if we can assume the vehicle will be flying forward on its X axis
+
+    /*
+     * vtol_flight is set by the vehicles to indicate that a VTOL
+     * plane is currently using the VTOL motors for flight (either in
+     * QAssist or in a full hover mode). When in VTOL flight, the
+     * AHRS should be forced to use EKF instead of DCM, like Copter does.
+     */
+    bool vtol_flight;
 
     // poke AP_Notify based on values from status
     void update_notify_from_filter_status(const nav_filter_status &status);

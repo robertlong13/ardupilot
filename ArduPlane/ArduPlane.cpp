@@ -159,6 +159,10 @@ void Plane::ahrs_update()
 {
     arming.update_soft_armed();
 
+#if HAL_QUADPLANE_ENABLED
+    ahrs.set_vtol_flight(
+        quadplane.in_vtol_mode() || quadplane.in_assisted_flight());
+#endif
     ahrs.update();
 
     if (should_log(MASK_LOG_IMU)) {

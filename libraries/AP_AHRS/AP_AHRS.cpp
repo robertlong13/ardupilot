@@ -1891,6 +1891,10 @@ AP_AHRS::EKFType AP_AHRS::_active_EKF_type(void) const
             // in a non-fly-forward mode then we are best off using the EKF
             return ret;
         }
+        if (vtol_flight) {
+            // if we are in VTOL flight then we are best off using the EKF
+            return ret;
+        }
         bool should_use_gps = true;
         nav_filter_status filt_state;
 #if HAL_NAVEKF2_AVAILABLE
