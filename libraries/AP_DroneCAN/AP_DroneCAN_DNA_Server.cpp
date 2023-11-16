@@ -412,7 +412,10 @@ void AP_DroneCAN_DNA_Server::handleNodeStatus(const CanardRxTransfer& transfer, 
         node_healthy_mask.clear(transfer.source_node_id);
     } else {
         node_healthy_mask.set(transfer.source_node_id);
-        if (node_healthy_mask == verified_mask) {
+        if ((node_seen_mask & occupation_mask != 0) && AP_DroneCAN::Options::DNA_CHECK_MISSING_NODES) {
+            server_state = MISSING_NODES;
+        }
+        else if (node_healthy_mask == verified_mask) {
             server_state = HEALTHY;
         }
     }
@@ -594,6 +597,14 @@ bool AP_DroneCAN_DNA_Server::prearm_check(char* fail_msg, uint8_t fail_msg_len) 
     }
     case FAILED_TO_ADD_NODE: {
         snprintf(fail_msg, fail_msg_len, "Failed to add Node %d!", fault_node_id);
+        return false;
+    }
+    case MISSING_NODES: {
+        if (!_ap_dronecan.option_is_set(AP_DroneCAN::Options::DNA_CHECK_MISSING_NODES)) {
+            // ignore error
+            return true;
+        }
+        snprintf(fail_msg, fail_msg_len, "Missing Nodes %X!", occupation_mask & ~node_seen_mask);
         return false;
     }
     case NODE_STATUS_UNHEALTHY: {

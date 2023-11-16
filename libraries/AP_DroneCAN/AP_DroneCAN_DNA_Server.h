@@ -25,6 +25,7 @@ class AP_DroneCAN_DNA_Server
 
     enum ServerState {
         NODE_STATUS_UNHEALTHY = -5,
+        MISSING_NODES = -4,
         STORAGE_FAILURE = -3,
         DUPLICATE_NODES = -2,
         FAILED_TO_ADD_NODE = -1,

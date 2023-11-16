@@ -127,6 +127,7 @@ public:
         USE_HIMARK_SERVO          = (1U<<6),
         USE_HOBBYWING_ESC         = (1U<<7),
         ENABLE_STATS              = (1U<<8),
+        DNA_CHECK_MISSING_NODES   = (1U<<9),
     };
 
     // check if a option is set
