@@ -360,6 +360,25 @@ float AP_MotorsTri::get_roll_factor(uint8_t i)
     return ret;
 }
 
+float AP_MotorsTri::get_pitch_factor(uint8_t i)
+{
+    float ret = 0.0f;
+
+    switch (i) {
+        // front motors
+        case AP_MOTORS_MOT_1:
+        case AP_MOTORS_MOT_2:
+            ret = 0.5f;
+            break;
+        // rear motor
+        case AP_MOTORS_MOT_4:
+            ret = -1.0f;
+            break;
+    }
+
+    return ret;
+}
+
 // Run arming checks
 bool AP_MotorsTri::arming_checks(size_t buflen, char *buffer) const
 {
@@ -373,4 +392,25 @@ bool AP_MotorsTri::arming_checks(size_t buflen, char *buffer) const
 
     // run base class checks
     return AP_MotorsMulticopter::arming_checks(buflen, buffer);
+}
+
+// Get the testing order for the motors
+uint8_t AP_MotorsTri::get_motor_test_order(uint8_t i)
+{
+    switch (i) {
+        // front right motor
+        case AP_MOTORS_MOT_1:
+            return 1;
+        // front left motor
+        case AP_MOTORS_MOT_2:
+            return 2;
+        // tilt servo
+        case AP_MOTORS_CH_TRI_YAW:
+            return 3;
+        // rear motor
+        case AP_MOTORS_MOT_4:
+            return 4;
+        default:
+            return 0;
+    }
 }
