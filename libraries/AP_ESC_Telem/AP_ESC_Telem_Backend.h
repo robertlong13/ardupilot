@@ -29,6 +29,7 @@ public:
         uint32_t flags;             // Status flags
         uint8_t power_percentage;   // Percentage of output power
 #endif // AP_EXTENDED_ESC_TELEM_ENABLED
+        uint32_t error_count;       // number of errors
 
         // set to false if no data has been received within the timeout period
         bool any_data_valid;
@@ -68,6 +69,7 @@ public:
         FLAGS       = 1 << 12,
         POWER_PERCENTAGE = 1 << 13,
 #endif // AP_EXTENDED_ESC_TELEM_ENABLED
+        ERROR_COUNT = 1 << 14,
     };
 
 
@@ -82,6 +84,10 @@ protected:
 
     // callback to update the data in the frontend, should be called by the driver when new data is available
     void update_telem_data(const uint8_t esc_index, const TelemetryData& new_data, const uint16_t data_present_mask);
+
+    // callback to increment the error count in the frontend, should be called by the driver when an error occurs
+    // XXX: we also supply the amount to increment by, which we are using as a hack to encode different error types
+    void increment_error_count(const uint8_t esc_index, const uint32_t amount);
 
 private:
     AP_ESC_Telem* _frontend;
