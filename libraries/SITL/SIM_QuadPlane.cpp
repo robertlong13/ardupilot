@@ -103,6 +103,13 @@ QuadPlane::QuadPlane(const char *frame_str) :
     mass = frame->get_mass() * 1.5;
     frame->set_mass(mass);
 
+    // Optionally load parameters from a json file
+    const char *colon = strchr(frame_str, ':');
+    size_t slen = strlen(frame_str);
+    if (colon != nullptr && slen > 5 && strcmp(&frame_str[slen-5], ".json") == 0) {
+        load_frame_params(colon+1);
+    }
+
     lock_step_scheduled = true;
 }
 

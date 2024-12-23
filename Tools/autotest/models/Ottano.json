@@ -1,0 +1,24 @@
+{
+    "mass" : 67.0,
+    "diagonal_size" : 2.4,
+    "refSpd" : 5.0,
+    "refAngle" : 7.0,
+    "refVoltage" : 44.8,
+    "refCurrent" : 430,
+    "refAlt" : 33,
+    "refTempC" : 26,
+    "refBatRes" : 0.009,
+    "maxVoltage" : 50.4,
+    "battCapacityAh" : 32,
+    "propExpo" : 0.58,
+    "refRotRate" : 190, # Sad story about why I know this one
+    "hoverThrOut" : 0.53,
+    "pwmMin" : 1000,
+    "pwmMax" : 2000,
+    "spin_min" : 0.1,
+    "spin_max" : 0.95,
+    "slew_max" : 75,
+    "disc_area" : 1.82,
+    "mdrag_coef" : 0.10,
+    "num_motors" : 4
+}

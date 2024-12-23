@@ -20,6 +20,7 @@
 #include "SIM_Plane.h"
 
 #include <stdio.h>
+#include <AP_Filesystem/AP_Filesystem.h>
 #include <AP_Filesystem/AP_Filesystem_config.h>
 
 using namespace SITL;
@@ -102,6 +103,145 @@ Plane::Plane(const char *frame_str) :
         mass = 2.0;
         coefficient.c_drag_p = 0.05;
     }
+
+    // Optionally load parameters from a json file
+    const char *colon = strchr(frame_str, ':');
+    size_t slen = strlen(frame_str);
+    if (colon != nullptr && slen > 5 && strcmp(&frame_str[slen-5], ".json") == 0) {
+        load_frame_params(colon+1);
+    }
+}
+
+void Plane::load_frame_params(const char *model_json)
+{
+    char *fname = nullptr;
+    struct stat st;
+    if (AP::FS().stat(model_json, &st) == 0) {
+        fname = strdup(model_json);
+    } else {
+        IGNORE_RETURN(asprintf(&fname, "@ROMFS/models/%s", model_json));
+        if (AP::FS().stat(model_json, &st) != 0) {
+            AP_HAL::panic("%s failed to load", model_json);
+        }
+    }
+    if (fname == nullptr) {
+        AP_HAL::panic("%s failed to load", model_json);
+    }
+    AP_JSON::value *obj = AP_JSON::load_json(model_json);
+    if (obj == nullptr) {
+        AP_HAL::panic("%s failed to load", model_json);
+    }
+
+    enum class VarType {
+        FLOAT,
+        VECTOR3F,
+        BOOL,
+    };
+
+    struct json_search {
+        const char *label;
+        void *ptr;
+        VarType t;
+    };
+
+    json_search vars[] = {
+#define COEF_VAR(var) { #var, &coefficient.var, VarType::FLOAT }
+#define FRAME_VAR(var) { #var, &var, VarType::FLOAT }
+#define FRAME_BOOL(var) { #var, &var, VarType::BOOL }
+        {"wing_area", &coefficient.s, VarType::FLOAT},
+        {"wing_span", &coefficient.b, VarType::FLOAT},
+        {"mean_aerodynamic_chord", &coefficient.c, VarType::FLOAT},
+        COEF_VAR(c_lift_0),
+        COEF_VAR(c_lift_deltae),
+        COEF_VAR(c_lift_a),
+        COEF_VAR(c_lift_q),
+        COEF_VAR(mcoeff),
+        COEF_VAR(oswald),
+        COEF_VAR(alpha_stall),
+        COEF_VAR(c_drag_q),
+        COEF_VAR(c_drag_deltae),
+        COEF_VAR(c_drag_p),
+        COEF_VAR(c_y_0),
+        COEF_VAR(c_y_b),
+        COEF_VAR(c_y_p),
+        COEF_VAR(c_y_r),
+        COEF_VAR(c_y_deltaa),
+        COEF_VAR(c_y_deltar),
+        COEF_VAR(c_l_0),
+        COEF_VAR(c_l_p),
+        COEF_VAR(c_l_b),
+        COEF_VAR(c_l_r),
+        COEF_VAR(c_l_deltaa),
+        COEF_VAR(c_l_deltar),
+        COEF_VAR(c_m_0),
+        COEF_VAR(c_m_a),
+        COEF_VAR(c_m_q),
+        COEF_VAR(c_m_deltae),
+        COEF_VAR(c_n_0),
+        COEF_VAR(c_n_b),
+        COEF_VAR(c_n_p),
+        COEF_VAR(c_n_r),
+        COEF_VAR(c_n_deltaa),
+        COEF_VAR(c_n_deltar),
+        COEF_VAR(deltaa_max),
+        COEF_VAR(deltae_max),
+        COEF_VAR(deltar_max),
+        {"CGOffset", &coefficient.CGOffset, VarType::VECTOR3F},
+        FRAME_VAR(mass),
+        FRAME_VAR(thrust_scale),
+        FRAME_BOOL(reverse_thrust),
+        FRAME_BOOL(elevons),
+        FRAME_BOOL(vtail),
+        FRAME_BOOL(dspoilers),
+        FRAME_BOOL(reverse_elevator_rudder),
+        FRAME_BOOL(ice_engine),
+        FRAME_BOOL(tailsitter),
+        FRAME_BOOL(aerobatic),
+        FRAME_BOOL(copter_tailsitter),
+        FRAME_BOOL(have_launcher),
+        FRAME_BOOL(have_steering),
+        FRAME_VAR(launch_accel),
+        FRAME_VAR(launch_time),
+    };
+
+    for (uint8_t i=0; i<ARRAY_SIZE(vars); i++) {
+        auto v = obj->get(vars[i].label);
+        if (v.is<AP_JSON::null>()) {
+            // use default value
+            continue;
+        }
+        if (vars[i].t == VarType::FLOAT) {
+            parse_float(v, vars[i].label, *((float *)vars[i].ptr));
+
+        } else if (vars[i].t == VarType::VECTOR3F) {
+            parse_vector3(v, vars[i].label, *(Vector3f *)vars[i].ptr);
+        } else if (vars[i].t == VarType::BOOL) {
+            parse_bool(v, vars[i].label, *(bool *)vars[i].ptr);
+        }
+    }
+}
+
+void Plane::parse_float(AP_JSON::value val, const char* label, float &param) {
+    if (!val.is<double>()) {
+        AP_HAL::panic("Bad json type for %s: %s", label, val.to_str().c_str());
+    }
+    param = val.get<double>();
+}
+
+void Plane::parse_vector3(AP_JSON::value val, const char* label, Vector3f &param) {
+    if (!val.is<AP_JSON::value::array>() || !val.contains(2) || val.contains(3)) {
+        AP_HAL::panic("Bad json type for %s: %s", label, val.to_str().c_str());
+    }
+    for (uint8_t j=0; j<3; j++) {
+        parse_float(val.get(j), label, param[j]);
+    }
+}
+
+void Plane::parse_bool(AP_JSON::value val, const char* label, bool &param) {
+    if (!val.is<bool>()) {
+        AP_HAL::panic("Bad json type for %s: %s", label, val.to_str().c_str());
+    }
+    param = val.get<bool>();
 }
 
 /*

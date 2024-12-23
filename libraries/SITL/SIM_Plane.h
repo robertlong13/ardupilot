@@ -21,6 +21,7 @@
 #include "SIM_Aircraft.h"
 #include "SIM_ICEngine.h"
 #include <Filter/LowPassFilter.h>
+#include <AP_JSON/AP_JSON.h>
 
 namespace SITL {
 
@@ -38,6 +39,8 @@ public:
     static Aircraft *create(const char *frame_str) {
         return NEW_NOTHROW Plane(frame_str);
     }
+
+    void load_frame_params(const char *model_json);
 
 protected:
     const float hover_throttle = 0.7f;
@@ -125,6 +128,10 @@ protected:
     Vector3f getForce(float inputAileron, float inputElevator, float inputRudder) const;
     Vector3f getTorque(float inputAileron, float inputElevator, float inputRudder, float inputThrust, const Vector3f &force) const;
     void calculate_forces(const struct sitl_input &input, Vector3f &rot_accel);
+    // json parsing helpers
+    void parse_float(AP_JSON::value val, const char* label, float &param);
+    void parse_vector3(AP_JSON::value val, const char* label, Vector3f &param);
+    void parse_bool(AP_JSON::value val, const char* label, bool &param);
 };
 
 } // namespace SITL
