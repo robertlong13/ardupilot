@@ -17,9 +17,7 @@
 #include <AP_ExternalAHRS/AP_ExternalAHRS.h>
 #include <AP_GyroFFT/AP_GyroFFT.h>
 #include <AP_Vehicle/AP_Vehicle_Type.h>
-#if !APM_BUILD_TYPE(APM_BUILD_Rover)
-#include <AP_Motors/AP_Motors_Class.h>
-#endif
+#include <AP_Motors/AP_Motors.h>
 #include <GCS_MAVLink/GCS.h>
 
 #include "AP_InertialSensor_BMI160.h"
@@ -1015,7 +1013,7 @@ AP_InertialSensor::init(uint16_t loop_rate)
         }
         notch.num_calculated_notch_frequencies = 1;
         notch.num_dynamic_notches = 1;
-#if APM_BUILD_COPTER_OR_HELI || APM_BUILD_TYPE(APM_BUILD_ArduPlane)
+#if AP_MOTORS_ENABLED
         if (notch.params.hasOption(HarmonicNotchFilterParams::Options::DynamicHarmonic)) {
 #if HAL_GYROFFT_ENABLED
             if (notch.params.tracking_mode() == HarmonicNotchDynamicMode::UpdateGyroFFT) {

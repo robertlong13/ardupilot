@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AP_Motors_config.h"
 #include <AP_Common/AP_Common.h>
 #include <AP_Math/AP_Math.h>
 #include <Filter/Filter.h>         // filter library
