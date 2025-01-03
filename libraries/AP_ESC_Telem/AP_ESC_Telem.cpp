@@ -45,6 +45,42 @@ const AP_Param::GroupInfo AP_ESC_Telem::var_info[] = {
     AP_GROUPEND
 };
 
+class int22_t {
+private:
+    int32_t value; // Use a 32-bit integer to store the value
+
+public:
+    // Constructor
+    int22_t(int32_t val = 0) {
+        value = (val & 0x3FFFFF); // Mask to 22 bits
+        if (value & 0x200000) {  // Handle sign extension for negative values
+            value |= ~0x3FFFFF;
+        }
+    }
+
+    // Assignment operator
+    int22_t& operator=(int32_t val) {
+        value = (val & 0x3FFFFF);
+        if (value & 0x200000) {
+            value |= ~0x3FFFFF;
+        }
+        return *this;
+    }
+
+    // Implicit conversion to int32_t
+    operator int32_t() const {
+        return value;
+    }
+
+    int22_t operator-(const int22_t& other) const {
+        return int22_t(value - other.value);
+    }
+
+    int22_t operator*(const int22_t& other) const {
+        return int22_t(value * other.value);
+    }
+};
+
 AP_ESC_Telem::AP_ESC_Telem()
 {
     if (_singleton) {
@@ -202,7 +238,7 @@ bool AP_ESC_Telem::get_rpm(uint8_t esc_index, float& rpm) const
 
     const uint32_t now = AP_HAL::micros();
     if (rpm_data_within_timeout(rpmdata, now, ESC_RPM_DATA_TIMEOUT_US)) {
-        const float slew = constrain_float(int32_t(now - rpmdata.last_update_us) * rpmdata.update_rate_hz * (1.0f / 1e6f), 0, 1);
+        const float slew = constrain_float(float(int22_t(now - rpmdata.last_update_us)) * rpmdata.update_rate_hz * (1.0f / 1e6f), 0, 1);
         rpm = (rpmdata.prev_rpm + (rpmdata.rpm - rpmdata.prev_rpm) * slew);
 
 #if AP_SCRIPTING_ENABLED
@@ -603,6 +639,11 @@ void AP_ESC_Telem::update_rpm(const uint8_t esc_index, const float new_rpm, cons
         return;
     }
 
+    // Toggle between telemetry working and not working every 5s
+    if (AP_HAL::millis() % 10000 < 5000) {
+        return;
+    }
+
     _have_data = true;
 
     const uint32_t now = MAX(1U ,AP_HAL::micros()); // don't allow a value of 0 in, as we use this as a flag in places
@@ -685,19 +726,22 @@ void AP_ESC_Telem::update()
     const uint64_t now_us64 = AP_HAL::micros64();
 
     for (uint8_t i = 0; i < ESC_TELEM_MAX_ESCS; i++) {
+        if (i != 4){
+            continue;
+        }
         const volatile AP_ESC_Telem_Backend::RpmData &rpmdata = _rpm_data[i];
         volatile AP_ESC_Telem_Backend::TelemetryData &telemdata = _telem_data[i];
         // Push received telemetry data into the logging system
         if (logger && logger->logging_enabled()) {
-            if (telemdata.last_update_ms != _last_telem_log_ms[i]
-                || rpmdata.last_update_us != _last_rpm_log_us[i]) {
+            if (telemdata.last_update_ms != 0) {
+                const uint32_t now_us = uint32_t(now_us64);
 
                 // Update last log timestamps
                 _last_telem_log_ms[i] = telemdata.last_update_ms;
                 _last_rpm_log_us[i] = rpmdata.last_update_us;
 
                 float rpm = AP::logger().quiet_nanf();
-                get_rpm(i, rpm);
+                bool data_valid2 = get_rpm(i, rpm);
                 float raw_rpm = AP::logger().quiet_nanf();
                 get_raw_rpm(i, raw_rpm);
 
@@ -714,14 +758,14 @@ void AP_ESC_Telem::update()
                     LOG_PACKET_HEADER_INIT(uint8_t(LOG_ESC_MSG)),
                     time_us     : now_us64,
                     instance    : i,
-                    rpm         : rpm,
-                    raw_rpm     : raw_rpm,
-                    voltage     : telemdata.voltage,
-                    current     : telemdata.current,
-                    esc_temp    : telemdata.temperature_cdeg,
-                    current_tot : telemdata.consumption_mah,
-                    motor_temp  : telemdata.motor_temp_cdeg,
-                    error_rate  : rpmdata.error_rate
+                    rpm         : float(int22_t(now_us)),
+                    raw_rpm     : float(int22_t(rpmdata.last_update_us)),
+                    voltage     : float(int22_t(now_us - _rpm_data[i].last_update_us)),
+                    current     : float(rpmdata.data_valid),
+                    esc_temp    : 0,
+                    current_tot : float(data_valid2),
+                    motor_temp  : 0,
+                    error_rate  : float(int22_t(now_us - _rpm_data[i].last_update_us) > ESC_RPM_DATA_TIMEOUT_US)
                 };
                 AP::logger().WriteBlock(&pkt, sizeof(pkt));
 
@@ -812,7 +856,7 @@ void AP_ESC_Telem::update()
     for (uint8_t i = 0; i < ESC_TELEM_MAX_ESCS; i++) {
         // Invalidate RPM data if not received for too long
         // (last_update_us might be fresher than now_us, so we use a signed difference)
-        if (int32_t(now_us - _rpm_data[i].last_update_us) > ESC_RPM_DATA_TIMEOUT_US) {
+        if (int22_t(now_us - _rpm_data[i].last_update_us) > ESC_RPM_DATA_TIMEOUT_US) {
             _rpm_data[i].data_valid = false;
         }
     }
@@ -822,7 +866,7 @@ bool AP_ESC_Telem::rpm_data_within_timeout(const volatile AP_ESC_Telem_Backend::
 {
     // easy case, has the time window been crossed so it's invalid
     // (last_update_us might be fresher than now_us, so we use a signed difference)
-    if (int32_t(now_us - instance.last_update_us) > timeout_us) {
+    if (int22_t(now_us - instance.last_update_us) > timeout_us) {
         return false;
     }
     // we never got a valid data, to it's invalid
