@@ -2313,23 +2313,51 @@ local ESCTelemetryData_ud = {}
 ---@return ESCTelemetryData_ud
 function ESCTelemetryData() end
 
--- set motor temperature
+-- get last updated time in ms
+---@return uint32_t_ud
+function ESCTelemetryData_ud:last_update_ms() end
+
+-- get usage time in seconds, or nil if not available
+---@return uint32_t_ud|nil
+function ESCTelemetryData_ud:usage_s() end
+
+-- get motor temperature in centidegrees Celsius, or nil if not available
+---@return integer|nil
+function ESCTelemetryData_ud:motor_temp_cdeg() end
+
+-- set motor temperature in centidegrees Celsius
 ---@param value integer
 function ESCTelemetryData_ud:motor_temp_cdeg(value) end
 
--- set consumption
+-- get consumption in mAh, or nil if not available
+---@return number|nil
+function ESCTelemetryData_ud:consumption_mah() end
+
+-- set consumption in mAh
 ---@param value number
 function ESCTelemetryData_ud:consumption_mah(value) end
 
--- set current
+-- get current in amps, or nil if not available
+---@return number|nil
+function ESCTelemetryData_ud:current() end
+
+-- set current in amps
 ---@param value number
 function ESCTelemetryData_ud:current(value) end
+
+-- get voltage, or nil if not available
+---@return number|nil
+function ESCTelemetryData_ud:voltage() end
 
 -- set voltage
 ---@param value number
 function ESCTelemetryData_ud:voltage(value) end
 
--- set temperature
+-- get ESC temperature in centidegrees Celsius, or nil if not available
+---@return integer|nil
+function ESCTelemetryData_ud:temperature_cdeg() end
+
+-- set ESC temperature in centidegrees Celsius
 ---@param value integer
 function ESCTelemetryData_ud:temperature_cdeg(value) end
 
@@ -2342,37 +2370,7 @@ esc_telem = {}
 ---@param data_mask integer -- bit mask of what fields are filled in
 function esc_telem:update_telem_data(instance, telemdata, data_mask) end
 
--- Returns an individual ESC’s usage time in seconds, or nil if not available.
----@param instance integer -- esc instance 0 indexed
----@return uint32_t_ud|nil -- usage time in seconds, nill if not available.
-function esc_telem:get_usage_seconds(instance) end
-
--- desc
----@param instance integer -- esc instance 0 indexed
----@return number|nil
-function esc_telem:get_consumption_mah(instance) end
-
--- desc
----@param instance integer -- esc instance 0 indexed
----@return number|nil
-function esc_telem:get_voltage(instance) end
-
--- desc
----@param instance integer -- esc instance 0 indexed
----@return number|nil
-function esc_telem:get_current(instance) end
-
--- desc
----@param instance integer -- esc instance 0 indexed
----@return integer|nil
-function esc_telem:get_motor_temperature(instance) end
-
--- desc
----@param instance integer -- esc instance 0 indexed
----@return integer|nil
-function esc_telem:get_temperature(instance) end
-
--- desc
+-- get RPM for an ESC, returns nil if not available or timed out
 ---@param instance integer -- esc instance 0 indexed
 ---@return number|nil
 function esc_telem:get_rpm(instance) end
@@ -2388,10 +2386,10 @@ function esc_telem:update_rpm(esc_index, rpm, error_rate) end
 ---@param scale_factor number -- factor
 function esc_telem:set_rpm_scale(esc_index, scale_factor) end
 
--- get the timestamp of last telemetry data for an ESC
----@param esc_index integer
----@return uint32_t_ud
-function esc_telem:get_last_telem_data_ms(esc_index) end
+-- get esc telemetry data structure, returns nil if not available
+---@param esc_index integer -- esc instance 0 indexed
+---@return ESCTelemetryData_ud|nil
+function esc_telem:get_telem(esc_index) end
 
 -- desc
 optical_flow = {}

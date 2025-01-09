@@ -187,6 +187,28 @@ bool AP_ESC_Telem::is_telemetry_active(uint32_t servo_channel_mask) const
     return true;
 }
 
+#if AP_SCRIPTING_ENABLED
+// This simplifies the process of adding new new field bindings in Lua, and
+// unifies this with the AP_Servo_Telem implementation. This also skips the
+// timeout checks, which bypasses a race condition on the stale check that
+// can cause a mid-check update to look like a timeout.
+bool AP_ESC_Telem::get_telem(const uint8_t esc_index, AP_ESC_Telem_Backend::TelemetryData& telem) const volatile
+{
+    // Check for valid index
+    if (esc_index >= ARRAY_SIZE(_telem_data)) {
+        return false;
+    }
+
+    // Check if data has ever been received for the esc index provided
+    if (_telem_data[esc_index].last_update_ms == 0) {
+        return false;
+    }
+
+    telem = *const_cast<AP_ESC_Telem_Backend::TelemetryData*>(&_telem_data[esc_index]);
+    return true;
+}
+#endif
+
 // get an individual ESC's slewed rpm if available, returns true on success
 bool AP_ESC_Telem::get_rpm(uint8_t esc_index, float& rpm) const
 {

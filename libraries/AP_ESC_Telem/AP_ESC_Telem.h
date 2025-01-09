@@ -28,6 +28,10 @@ public:
 
     static AP_ESC_Telem *get_singleton();
 
+#if AP_SCRIPTING_ENABLED
+    bool get_telem(const uint8_t esc_index, AP_ESC_Telem_Backend::TelemetryData& telem) const volatile;
+#endif
+
     // get an individual ESC's slewed rpm if available, returns true on success
     bool get_rpm(uint8_t esc_index, float& rpm) const;
 
