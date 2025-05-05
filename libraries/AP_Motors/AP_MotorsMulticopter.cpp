@@ -740,7 +740,7 @@ void AP_MotorsMulticopter::set_throttle_passthrough_for_esc_calibration(float th
 // output a thrust to all motors that match a given motor mask. This
 // is used to control tiltrotor motors in forward flight. Thrust is in
 // the range 0 to 1
-void AP_MotorsMulticopter::output_motor_mask(float thrust, uint32_t mask, float rudder_dt)
+void AP_MotorsMulticopter::output_motor_mask(float thrust, uint32_t mask, float rudder_dt, float aileron_dt)
 {
     const int16_t pwm_min = get_pwm_output_min();
     const int16_t pwm_range = get_pwm_output_max() - pwm_min;
@@ -756,6 +756,12 @@ void AP_MotorsMulticopter::output_motor_mask(float thrust, uint32_t mask, float 
                  apples to either tilted motors or tailsitters
                  */
                 float diff_thrust = get_roll_factor(i) * rudder_dt * 0.5f;
+                /*
+                 apply aileron mixing differential thrust
+                 copter frame yaw is plane frame roll as this only
+                 apples to either tilted motors or tailsitters
+                */
+                diff_thrust += get_yaw_factor(i) * aileron_dt * 0.5f;
                 set_actuator_with_slew(_actuator[i], thrust + diff_thrust);
             } else {
                 // zero throttle
