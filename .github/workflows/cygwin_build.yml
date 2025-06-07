@@ -208,6 +208,12 @@ jobs:
           Tools/scripts/cygwin_build.sh &&
           ccache -s
 
+      - name: ls build directory
+        shell: C:\cygwin\bin\bash.exe -eo pipefail '{0}'
+        run: >-
+          echo "Build directory:" &&
+          ls -lart build
+
       - name: Check build files
         id: check_files
         uses: andstor/file-existence-action@v2
@@ -216,6 +222,7 @@ jobs:
           fail: true
 
       - name: Archive build
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: binaries
