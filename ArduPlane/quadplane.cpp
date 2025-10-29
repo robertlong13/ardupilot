@@ -2573,7 +2573,6 @@ void QuadPlane::vtol_position_controller(void)
 
         Vector2f target_speed_ne_ms;
         Vector2f target_accel_ne_mss;
-        bool have_target_yaw = false;
         float target_yaw_deg;
         const float approach_accel_mss = MIN(accel_needed(wp_distance_m, sq(closing_groundspeed_ms)), transition_decel_mss * 2);
         if (wp_distance_m > 0.1) {
@@ -2605,14 +2604,6 @@ void QuadPlane::vtol_position_controller(void)
                                                   2*position2_dist_threshold_m + stopping_distance_m(rel_groundspeed_sq));
 
                 target_speed_ne_ms = diff_wp_norm * approach_speed_ms;
-                have_target_yaw = true;
-
-                // adjust target yaw angle for wind. We calculate yaw based on the target speed
-                // we want assuming no speed scaling due to direction
-                const Vector2f wind_ms = plane.ahrs.wind_estimate().xy();
-                const float gnd_speed_ms = plane.ahrs.groundspeed();
-                Vector2f target_speed_xy = landing_velocity_ne_ms + diff_wp_norm * gnd_speed_ms - wind_ms;
-                target_yaw_deg = degrees(target_speed_xy.angle());
             }
         }
         const float target_speed_ms = target_speed_ne_ms.length();
@@ -2664,15 +2655,9 @@ void QuadPlane::vtol_position_controller(void)
         // setup scaling of roll and pitch angle P gains to match fixed wing gains
         setup_rp_fw_angle_gains();
 
-        if (have_target_yaw) {
-            attitude_control->input_euler_angle_roll_pitch_yaw_cd(plane.nav_roll_cd,
-                                                               plane.nav_pitch_cd,
-                                                               target_yaw_deg * 100, true);
-        } else {
-            attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw_cd(plane.nav_roll_cd,
-                                                                          plane.nav_pitch_cd,
-                                                                          desired_auto_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
-        }
+        attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw_cd(plane.nav_roll_cd,
+                                                                         plane.nav_pitch_cd,
+                                                                         desired_auto_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
         if ((plane.auto_state.wp_distance < position2_dist_threshold_m) && tiltrotor.tilt_angle_achieved() &&
             fabsf(rel_groundspeed_sq) < sq(3 * position2_target_speed_ms)) {
             // if continuous tiltrotor only advance to position 2 once tilts have finished moving
