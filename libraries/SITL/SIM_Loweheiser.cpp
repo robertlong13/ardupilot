@@ -44,6 +44,16 @@ void Loweheiser::update()
     maybe_send_heartbeat();
     update_receive();
     update_send();
+
+    // periodic POWER_STATUS if interval has been set
+    if (extended_sys_state_interval_us > 0) {
+        const uint32_t now_ms = AP_HAL::millis();
+        const uint32_t interval_ms = extended_sys_state_interval_us / 1000;
+        if (interval_ms > 0 && now_ms - last_extended_sys_state_ms >= interval_ms) {
+            last_extended_sys_state_ms = now_ms;
+            send_extended_sys_state();
+        }
+    }
 }
 
 void Loweheiser::maybe_send_heartbeat()
@@ -57,14 +67,19 @@ void Loweheiser::maybe_send_heartbeat()
     last_heartbeat_ms = now;
 
     mavlink_message_t msg;
-    mavlink_msg_heartbeat_pack(system_id,
-                               component_id,
-                               &msg,
-                               MAV_TYPE_GCS,
-                               MAV_AUTOPILOT_INVALID,
-                               0,
-                               0,
-                               0);
+    const mavlink_heartbeat_t hb {
+        custom_mode: 0,
+        type: MAV_TYPE_GCS,
+        autopilot: MAV_AUTOPILOT_INVALID,
+        base_mode: 0,
+        system_status: 0,
+        mavlink_version: 0,
+    };
+    mavlink_msg_heartbeat_encode_status(system_id,
+                                        component_id,
+                                        &mav_status,
+                                        &msg,
+                                        &hb);
 
     uint8_t buf[300];
     uint16_t buf_len = mavlink_msg_to_send_buffer(buf, &msg);
@@ -74,75 +89,162 @@ void Loweheiser::maybe_send_heartbeat()
     }
 }
 
+void Loweheiser::send_command_ack(uint16_t command, uint8_t result, uint8_t sender_sysid, uint8_t sender_compid)
+{
+    mavlink_message_t ack;
+    const mavlink_command_ack_t ack_pkt {
+        command: command,
+        result: result,
+        progress: 0,
+        result_param2: 0,
+        target_system: sender_sysid,
+        target_component: sender_compid,
+    };
+    mavlink_msg_command_ack_encode_status(
+        system_id,
+        component_id,
+        &mav_status,
+        &ack,
+        &ack_pkt
+    );
+    uint8_t buf[300];
+    uint16_t buf_len = mavlink_msg_to_send_buffer(buf, &ack);
+    write_to_autopilot((const char*)&buf, buf_len);
+}
+
+void Loweheiser::send_extended_sys_state()
+{
+    const mavlink_extended_sys_state_t pkt {
+        vtol_state: 0,
+        landed_state: MAV_LANDED_STATE_UNDEFINED,
+    };
+    mavlink_message_t msg;
+    mavlink_msg_extended_sys_state_encode_status(
+        system_id,
+        component_id,
+        &mav_status,
+        &msg,
+        &pkt
+    );
+    uint8_t buf[300];
+    uint16_t buf_len = mavlink_msg_to_send_buffer(buf, &msg);
+    write_to_autopilot((const char*)&buf, buf_len);
+}
+
 void Loweheiser::handle_message(const mavlink_message_t &msg)
 {
     switch (msg.msgid) {
-    case MAVLINK_MSG_ID_COMMAND_LONG: {
-        mavlink_command_long_t pkt;
-        mavlink_msg_command_long_decode(&msg, &pkt);
-
-        if (pkt.target_system != system_id ||
-            pkt.target_component != component_id) {
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Not for me");
-            return;
+    case MAVLINK_MSG_ID_HEARTBEAT: {
+        if (!seen_heartbeat) {
+            mavlink_heartbeat_t hb;
+            mavlink_msg_heartbeat_decode(&msg, &hb);
+            if (hb.autopilot == MAV_AUTOPILOT_ARDUPILOTMEGA) {
+                seen_heartbeat = true;
+                system_id = msg.sysid;
+                ::printf("Loweheiser using sysid %u\n", (unsigned)system_id);
+            }
         }
+        break;
+    }
+    case MAVLINK_MSG_ID_COMMAND_LONG:
+        handle_command_long(msg);
+        break;
+    }
+}
 
-        switch (pkt.command) {
-        case MAV_CMD_LOWEHEISER_SET_STATE:
-            // decode the desired run state:
-            // param2 physically turns power on/off to the EFI!
-            switch ((uint8_t)pkt.param2) {
-            case 0:
-                autopilot_desired_engine_run_state = EngineRunState::OFF;
-                break;
-            case 1:
-                autopilot_desired_engine_run_state = EngineRunState::ON;
-                break;
-            default:
-                AP_HAL::panic("Bad desired engine run state");
-            }
-            switch ((uint8_t)pkt.param3) {
-            case 0:
-                autopilot_desired_governor_state = GovernorState::OFF;
-                break;
-            case 1:
-                autopilot_desired_governor_state = GovernorState::ON;
-                break;
-            default:
-                AP_HAL::panic("Bad desired governor state");
-            }
-            switch ((uint8_t)pkt.param5) {
-            case 0:
-                autopilot_desired_startup_state = StartupState::OFF;
-                break;
-            case 1:
-                autopilot_desired_startup_state = StartupState::ON;
-                break;
-            default:
-                AP_HAL::panic("Bad electronic startup state");
-            }
-            manual_throttle_pct = pkt.param4;
-            mavlink_message_t ack;
-            mavlink_msg_command_ack_pack(
+void Loweheiser::handle_command_long(const mavlink_message_t &msg)
+{
+    mavlink_command_long_t pkt;
+    mavlink_msg_command_long_decode(&msg, &pkt);
+
+    if (pkt.target_system != system_id ||
+        pkt.target_component != component_id) {
+        return;
+    }
+
+    switch ((uint16_t)pkt.command) {
+    case MAV_CMD_LOWEHEISER_SET_STATE:
+        // decode the desired run state:
+        // param2 physically turns power on/off to the EFI!
+        switch ((uint8_t)pkt.param2) {
+        case 0:
+            autopilot_desired_engine_run_state = EngineRunState::OFF;
+            break;
+        case 1:
+            autopilot_desired_engine_run_state = EngineRunState::ON;
+            break;
+        default:
+            AP_HAL::panic("Bad desired engine run state");
+        }
+        switch ((uint8_t)pkt.param3) {
+        case 0:
+            autopilot_desired_governor_state = GovernorState::OFF;
+            break;
+        case 1:
+            autopilot_desired_governor_state = GovernorState::ON;
+            break;
+        default:
+            AP_HAL::panic("Bad desired governor state");
+        }
+        switch ((uint8_t)pkt.param5) {
+        case 0:
+            autopilot_desired_startup_state = StartupState::OFF;
+            break;
+        case 1:
+            autopilot_desired_startup_state = StartupState::ON;
+            break;
+        default:
+            AP_HAL::panic("Bad electronic startup state");
+        }
+        manual_throttle_pct = pkt.param4;
+        send_command_ack(MAV_CMD_LOWEHEISER_SET_STATE, MAV_RESULT_ACCEPTED, msg.sysid, msg.compid);
+        break;
+
+    case MAV_CMD_REQUEST_MESSAGE:
+        if ((uint32_t)pkt.param1 == MAVLINK_MSG_ID_EXTENDED_SYS_STATE) {
+            send_extended_sys_state();
+            send_command_ack(MAV_CMD_REQUEST_MESSAGE, MAV_RESULT_ACCEPTED, msg.sysid, msg.compid);
+        } else {
+            send_command_ack(MAV_CMD_REQUEST_MESSAGE, MAV_RESULT_DENIED, msg.sysid, msg.compid);
+        }
+        break;
+
+    case MAV_CMD_SET_MESSAGE_INTERVAL:
+        if ((uint32_t)pkt.param1 == MAVLINK_MSG_ID_EXTENDED_SYS_STATE) {
+            extended_sys_state_interval_us = (int32_t)pkt.param2;
+            send_command_ack(MAV_CMD_SET_MESSAGE_INTERVAL, MAV_RESULT_ACCEPTED, msg.sysid, msg.compid);
+        } else {
+            send_command_ack(MAV_CMD_SET_MESSAGE_INTERVAL, MAV_RESULT_DENIED, msg.sysid, msg.compid);
+        }
+        break;
+
+    case MAV_CMD_GET_MESSAGE_INTERVAL: {
+        if ((uint32_t)pkt.param1 == MAVLINK_MSG_ID_EXTENDED_SYS_STATE) {
+            mavlink_message_t interval_msg;
+            const mavlink_message_interval_t interval_pkt {
+                interval_us: extended_sys_state_interval_us,
+                message_id: MAVLINK_MSG_ID_EXTENDED_SYS_STATE,
+            };
+            mavlink_msg_message_interval_encode_status(
                 system_id,
                 component_id,
-                &ack,
-                MAV_CMD_LOWEHEISER_SET_STATE,
-                MAV_RESULT_ACCEPTED,
-                0,
-                0,
-                msg.sysid,
-                msg.compid
-                );
+                &mav_status,
+                &interval_msg,
+                &interval_pkt
+            );
             uint8_t buf[300];
-            uint16_t buf_len = mavlink_msg_to_send_buffer(buf, &ack);
-
-            if (write_to_autopilot((const char*)&buf, buf_len) != buf_len) {
-                // ::fprintf(stderr, "write failure\n");
-            }
-            break;
+            uint16_t buf_len = mavlink_msg_to_send_buffer(buf, &interval_msg);
+            write_to_autopilot((const char*)&buf, buf_len);
+            send_command_ack(MAV_CMD_GET_MESSAGE_INTERVAL, MAV_RESULT_ACCEPTED, msg.sysid, msg.compid);
+        } else {
+            send_command_ack(MAV_CMD_GET_MESSAGE_INTERVAL, MAV_RESULT_DENIED, msg.sysid, msg.compid);
         }
-    };
+        break;
+    }
+
+    default:
+        send_command_ack(pkt.command, MAV_RESULT_UNSUPPORTED, msg.sysid, msg.compid);
+        break;
     }
 }
 

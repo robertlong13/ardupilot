@@ -110,9 +110,11 @@ public:
 
 private:
 
-    // TODO: make these parameters:
-    const uint8_t system_id = 17;
+    // learn system_id from first autopilot heartbeat so we
+    // share the vehicle's sysid (important for multi-vehicle)
+    uint8_t system_id = 17;  // fallback until we see a heartbeat
     const uint8_t component_id = 18;
+    bool seen_heartbeat;
 
     const float max_current = 50.0f;
     const float base_supply_voltage = 50.0;
@@ -126,6 +128,15 @@ private:
     uint32_t last_heartbeat_ms;
 
     void handle_message(const mavlink_message_t &msg);
+    void handle_command_long(const mavlink_message_t &msg);
+
+    void send_command_ack(uint16_t command, uint8_t result, uint8_t sender_sysid, uint8_t sender_compid);
+    void send_extended_sys_state();
+
+    // interval for sending EXTENDED_SYS_STATE via SET_MESSAGE_INTERVAL
+    // -1 = disabled, 0 = not available
+    int32_t extended_sys_state_interval_us = -1;
+    uint32_t last_extended_sys_state_ms;
 
     enum class EngineRunState : uint8_t {
         OFF = 0,
