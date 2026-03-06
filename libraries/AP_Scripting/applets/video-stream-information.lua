@@ -51,7 +51,7 @@ local VID1_ID = bind_add_param('ID', 2, 1)
   // @User: Standard
 --]]
 -- values should match VID_TYPE_ENUM
-local VID1_TYPE = bind_add_param('TYPE', 3, 0)
+local VID1_TYPE = bind_add_param('TYPE', 3, 1)
 
 --[[
   // @Param: VID1_FLAG
@@ -69,7 +69,7 @@ local VID1_FLAG = bind_add_param('FLAG', 4, 1)
   // @Range: 0 50
   // @User: Standard
 --]]
-local VID1_FR = bind_add_param('FRAME_RATE', 5, 30)
+local VID1_FR = bind_add_param('FRAME_RATE', 5, 15)
 
 --[[
   // @Param: VID1_HRES
@@ -78,7 +78,7 @@ local VID1_FR = bind_add_param('FRAME_RATE', 5, 30)
   // @Range: 0 4096
   // @User: Standard
 --]]
-local VID1_HRES = bind_add_param('HRES', 6, 1920)
+local VID1_HRES = bind_add_param('HRES', 6, 424)
 
 --[[
   // @Param: VID1_VRES
@@ -87,7 +87,7 @@ local VID1_HRES = bind_add_param('HRES', 6, 1920)
   // @Range: 0 4096
   // @User: Standard
 --]]
-local VID1_VRES = bind_add_param('VRES', 7, 1080)
+local VID1_VRES = bind_add_param('VRES', 7, 240)
 
  --[[
   // @Param: VID1_BITRATE
@@ -159,7 +159,7 @@ local VID1_IPADDR3 = bind_add_param('IPADDR3', 14, -1)
   // @Range: 0 65535
   // @User: Standard
 --]]
-local VID1_IPPORT = bind_add_param('IPPORT', 15, -1)
+local VID1_IPPORT = bind_add_param('IPPORT', 15, 5123)
 
 function set_video_stream_information()
     local INSTANCE = 0
