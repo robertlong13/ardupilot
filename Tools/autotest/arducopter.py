@@ -13370,13 +13370,22 @@ class AutoTestCopter(vehicle_test_suite.TestSuite):
         # We took off to 20m and the target is 20m North, so pitch should be around -45 degrees
         self.test_mount_pitch(-45, 5, mavutil.mavlink.MAV_MOUNT_MODE_GPS_POINT)
 
+        # Reposition the aircraft 20m South of the takeoff location, so it's now 40m from the target, and pitch should be around -27 degrees
+        t = self.offset_location_ne(takeoff_loc, -20, 0)
+        self.send_set_position_target_global_int(int(t.lat * 1e7), int(t.lng * 1e7), 20)
+        self.test_mount_pitch(-27, 5, mavutil.mavlink.MAV_MOUNT_MODE_GPS_POINT, constrained=False)
+
         # test HOME_LOCATION
         self.start_subtest("HOME_LOCATION")
         self.run_cmd(
             mavutil.mavlink.MAV_CMD_DO_MOUNT_CONTROL,
             p7=mavutil.mavlink.MAV_MOUNT_MODE_HOME_LOCATION,
         )
-        # We are directly above home, so pitch should be around -90 degrees
+        # We are 20m South of home and at 20m altitude, so pitch should be around -45 degrees
+        self.test_mount_pitch(-45, 5, mavutil.mavlink.MAV_MOUNT_MODE_HOME_LOCATION, constrained=False)
+
+        # Reposition over home again, pitch should move to -90 degrees
+        self.send_set_position_target_global_int(int(takeoff_loc.lat * 1e7), int(takeoff_loc.lng * 1e7), 20)
         self.test_mount_pitch(-90, 5, mavutil.mavlink.MAV_MOUNT_MODE_HOME_LOCATION, constrained=False)
 
         self.do_RTL()
