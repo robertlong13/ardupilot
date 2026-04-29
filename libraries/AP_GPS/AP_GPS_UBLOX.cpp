@@ -39,9 +39,17 @@
 
 
 #define UBLOX_DEBUGGING 0
-#define UBLOX_FAKE_3DLOCK 0
+#define UBLOX_FAKE_3DLOCK 1
 #ifndef CONFIGURE_PPS_PIN
 #define CONFIGURE_PPS_PIN 0
+#endif
+
+#if UBLOX_FAKE_3DLOCK
+// Real time_week values below this are considered implausible and the
+// fake time path will replace them. Jan 1 2026 ~ GPS week 2399.
+#ifndef UBLOX_FAKE_TIME_WEEK_THRESHOLD
+#define UBLOX_FAKE_TIME_WEEK_THRESHOLD 2399
+#endif
 #endif
 
 // this is number of epochs per output. A higher value will reduce
@@ -1615,10 +1623,12 @@ AP_GPS_UBLOX::_parse_gps(void)
         }
 #if UBLOX_FAKE_3DLOCK
         next_fix = state.status;
-        state.num_sats = 10;
-        state.time_week = 1721;
-        state.time_week_ms = AP_HAL::millis() + 3*60*60*1000 + 37000;
-        state.last_gps_time_ms = AP_HAL::millis();
+        state.num_sats = 25;
+        if (state.time_week < UBLOX_FAKE_TIME_WEEK_THRESHOLD) {
+            state.time_week = 1721;
+            state.time_week_ms = AP_HAL::millis() + 3*60*60*1000 + 37000;
+            state.last_gps_time_ms = AP_HAL::millis();
+        }
         state.hdop = 130;
 #endif
         break;
@@ -1770,10 +1780,14 @@ AP_GPS_UBLOX::_parse_gps(void)
         state.vertical_accuracy = 0;
         state.horizontal_accuracy = 0;
         state.status = AP_GPS_FixType::FIX_3D;
-        state.num_sats = 10;
-        state.time_week = 1721;
-        state.time_week_ms = AP_HAL::millis() + 3*60*60*1000 + 37000;
-        state.last_gps_time_ms = AP_HAL::millis();
+        state.num_sats = 25;
+        // Might as well use any time information the GPS is reporting, as long
+        // as it's not obviously wrong. Otherwise, fake a time
+        if (state.time_week < UBLOX_FAKE_TIME_WEEK_THRESHOLD) {
+            state.time_week = 1721; // circa end of 2012
+            state.time_week_ms = AP_HAL::millis() + 3*60*60*1000 + 37000;
+            state.last_gps_time_ms = AP_HAL::millis();
+        }
         state.hdop = 130;
         state.speed_accuracy = 0;
         next_fix = state.status;
