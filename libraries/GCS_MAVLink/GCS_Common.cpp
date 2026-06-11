@@ -27,6 +27,9 @@
 #include <AP_AdvancedFailsafe/AP_AdvancedFailsafe.h>
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_HAL/AP_HAL.h>
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#include <AP_HAL_SITL/Scheduler.h>
+#endif
 #include <AP_Arming/AP_Arming.h>
 #include <AP_InternalError/AP_InternalError.h>
 #include <AP_Logger/AP_Logger.h>
@@ -3644,6 +3647,20 @@ MAV_RESULT GCS_MAVLINK::handle_preflight_reboot(const mavlink_command_int_t &pac
             hal.util->boot_to_dfu();
             return MAV_RESULT_ACCEPTED;
 #endif
+        }
+#endif
+
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+        // SITL quicksave (param4=110) / quickload (param4=111). Handled here,
+        // before the armed check, so they work in flight. Serviced on the
+        // main loop; the ACK below goes out before the fork/exit happens.
+        if (is_equal(packet.param4, 110.0f) || is_equal(packet.param4, 111.0f)) {
+            const bool save = is_equal(packet.param4, 110.0f);
+            HALSITL::Scheduler::from(hal.scheduler)->request_checkpoint(
+                save ? HALSITL::Scheduler::CheckpointOp::SAVE
+                     : HALSITL::Scheduler::CheckpointOp::LOAD);
+            send_text(MAV_SEVERITY_INFO, save ? "SITL quicksave" : "SITL quickload");
+            return MAV_RESULT_ACCEPTED;
         }
 #endif
     }
