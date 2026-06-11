@@ -17,6 +17,13 @@
 #include <fcntl.h>
 #include <sanitizer/asan_interface.h>
 #endif
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <errno.h>
+#if HAL_LOGGING_ENABLED
+#include <AP_Logger/AP_Logger.h>
+#endif
 
 using namespace HALSITL;
 
@@ -45,6 +52,12 @@ bool Scheduler::_in_semaphore_take_wait = false;
 
 Scheduler::thread_attr *Scheduler::threads;
 HAL_Semaphore Scheduler::_thread_sem;
+
+volatile Scheduler::CheckpointOp Scheduler::_checkpoint_op = Scheduler::CheckpointOp::NONE;
+volatile bool Scheduler::_barrier_engaged;
+volatile uint32_t Scheduler::_threads_parked;
+pid_t Scheduler::_savepoint_pid = -1;
+int Scheduler::_restore_pipe[2] = { -1, -1 };
 
 Scheduler::Scheduler(SITL_State *sitlState) :
     _sitlState(sitlState),
@@ -305,6 +318,206 @@ void Scheduler::stop_clock(uint64_t time_usec)
         _last_io_run = time_usec;
         _run_io_procs();
     }
+}
+
+/*
+  SITL quicksave/quickload implementation.
+
+  A checkpoint is a fork() taken while every non-main (helper) thread is
+  parked at a known lock-free point. fork() copies the whole address space
+  but only the calling (main) thread, so on restore we deliberately respawn
+  the helper threads from the registry rather than relying on fork to carry
+  them - this is what makes it portable (e.g. Cygwin) where carrying threads
+  across fork is fragile.
+ */
+
+// number of registered (non-main) threads in the list
+uint32_t Scheduler::count_threads()
+{
+    WITH_SEMAPHORE(_thread_sem);
+    uint32_t n = 0;
+    for (struct thread_attr *a = threads; a != nullptr; a = a->next) {
+        n++;
+    }
+    return n;
+}
+
+// cooperative park point, called by non-main threads from wait_clock(). This
+// is the existing 10us poll loop, so parking here holds no locks.
+void Scheduler::checkpoint_park_point()
+{
+    if (!_barrier_engaged) {
+        return;
+    }
+    __atomic_add_fetch(&_threads_parked, 1, __ATOMIC_SEQ_CST);
+    while (_barrier_engaged) {
+        usleep(50);
+    }
+    __atomic_sub_fetch(&_threads_parked, 1, __ATOMIC_SEQ_CST);
+}
+
+// serviced on the main thread from the top-level loop (a lock-free point)
+void Scheduler::service_checkpoint()
+{
+    const CheckpointOp op = _checkpoint_op;
+    if (op == CheckpointOp::NONE) {
+        return;
+    }
+    _checkpoint_op = CheckpointOp::NONE;
+    if (op == CheckpointOp::SAVE) {
+        do_quicksave();
+    } else {
+        do_quickload();
+    }
+}
+
+void Scheduler::do_quicksave()
+{
+    // single quicksave slot: discard any previous savepoint
+    if (_savepoint_pid > 0) {
+        kill(_savepoint_pid, SIGKILL);
+        waitpid(_savepoint_pid, nullptr, 0);
+        _savepoint_pid = -1;
+    }
+    if (_restore_pipe[0] != -1) { close(_restore_pipe[0]); _restore_pipe[0] = -1; }
+    if (_restore_pipe[1] != -1) { close(_restore_pipe[1]); _restore_pipe[1] = -1; }
+    if (pipe(_restore_pipe) != 0) {
+        return;
+    }
+
+    // quiesce every helper thread at its cooperative park point
+    const uint32_t n = count_threads();
+    _threads_parked = 0;
+    _barrier_engaged = true;
+    while (__atomic_load_n(&_threads_parked, __ATOMIC_SEQ_CST) < n) {
+        usleep(50);
+    }
+
+    // only the main thread is live now; helpers spin in checkpoint_park_point()
+    // holding no locks. Fork a frozen copy.
+    const pid_t pid = fork();
+    if (pid < 0) {
+        _barrier_engaged = false;
+        return;
+    }
+    if (pid > 0) {
+        // parent = the live process; keeps flying
+        _savepoint_pid = pid;
+        close(_restore_pipe[0]);
+        _restore_pipe[0] = -1;
+        _barrier_engaged = false;       // release helpers
+        return;
+    }
+
+    // child = frozen savepoint. Only the calling thread exists here.
+    close(_restore_pipe[1]);
+    _restore_pipe[1] = -1;
+
+    // Re-arm the savepoint on every quickload so the same save can be loaded
+    // repeatedly (until the next quicksave). When woken we first fork a fresh
+    // frozen copy of this saved state - still single-threaded, before any
+    // respawn or semaphore re-base, so it is identical to the original
+    // savepoint - to serve the next quickload, then this process goes live.
+    while (true) {
+        freeze_until_restore();         // block until a quickload wakes us
+
+        if (pipe(_restore_pipe) != 0) {
+            _restore_pipe[0] = -1;
+            _restore_pipe[1] = -1;
+            _savepoint_pid = -1;
+            break;                      // can't re-arm; go live without a savepoint
+        }
+        const pid_t child_pid = fork();
+        if (child_pid < 0) {
+            close(_restore_pipe[0]); _restore_pipe[0] = -1;
+            close(_restore_pipe[1]); _restore_pipe[1] = -1;
+            _savepoint_pid = -1;
+            break;                      // fork failed; go live without a savepoint
+        }
+        if (child_pid == 0) {
+            // the replacement savepoint: keep the read end, loop back to freeze
+            close(_restore_pipe[1]);
+            _restore_pipe[1] = -1;
+            continue;
+        }
+        // we are the one going live; keep the write end to wake the
+        // replacement on the next quickload
+        _savepoint_pid = child_pid;
+        close(_restore_pipe[0]);
+        _restore_pipe[0] = -1;
+        break;
+    }
+
+    // become the live process at the saved state. Re-base the semaphores first:
+    // this thread has a new TID, so any mutex held across the fork (e.g. the
+    // scheduler loop sem) must be reset before we touch any lock.
+    Semaphore::reinit_after_fork();
+    _barrier_engaged = false;           // clear before respawning
+    // do the fd surgery (sockets, log rewind) while still single-threaded so
+    // it can't race the respawned log_io thread writing to the same log fd
+    reinit_io_after_restore();
+    respawn_threads();
+}
+
+void Scheduler::freeze_until_restore()
+{
+    // block until the parent writes a wake byte (quickload) or closes the
+    // pipe (parent exited without loading -> discard this stale savepoint)
+    uint8_t b;
+    ssize_t r;
+    do {
+        r = read(_restore_pipe[0], &b, 1);
+    } while (r < 0 && errno == EINTR);
+    if (r <= 0) {
+        _exit(0);
+    }
+    close(_restore_pipe[0]);
+    _restore_pipe[0] = -1;
+}
+
+void Scheduler::do_quickload()
+{
+    if (_savepoint_pid <= 0 || _restore_pipe[1] == -1) {
+        return;                         // nothing saved
+    }
+    // wake the child and disappear; the child's inherited listen sockets stay
+    // bound, so GCS/MAVProxy reconnect to it once we exit.
+    const uint8_t b = 1;
+    IGNORE_RETURN(write(_restore_pipe[1], &b, 1));
+    _exit(0);
+}
+
+void Scheduler::respawn_threads()
+{
+    // re-create a live pthread for each registered thread; each re-enters its
+    // MemberProc loop. Heap/member state is intact (copied by fork); only
+    // per-thread C-stack state is reset.
+    for (struct thread_attr *a = threads; a != nullptr; a = a->next) {
+        if (pthread_create(&a->thread, &a->attr, thread_create_trampoline, a) != 0) {
+            AP_HAL::panic("checkpoint: failed to respawn thread %s", a->name);
+        }
+#if !defined(__APPLE__) && !defined(__OpenBSD__)
+        pthread_setname_np(a->thread, a->name);
+#endif
+    }
+}
+
+void Scheduler::reinit_io_after_restore()
+{
+    // the original launcher is gone now that the live parent has exited;
+    // stop the parent-death watchdog from killing this resumed savepoint
+    _sitlState->checkpoint_orphan();
+
+    // drop the stale client connections inherited from the parent so
+    // GCS/MAVProxy reconnect to the (still-bound, inherited) listen socket
+    for (uint8_t i=0; i<hal.num_serial; i++) {
+        ((HALSITL::UARTDriver*)hal.serial(i))->checkpoint_reset_connection();
+    }
+#if HAL_LOGGING_ENABLED
+    // rewind the dataflash log to the quicksave point and drop the tail the
+    // parent appended (we shared its write fd offset)
+    AP::logger().checkpoint_rewind();
+#endif
 }
 
 /*

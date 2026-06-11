@@ -297,6 +297,8 @@ void HAL_SITL::run(int argc, char * const argv[], Callbacks* callbacks) const
         }
         callbacks->loop();
         HALSITL::Scheduler::_run_io_procs();
+        // service a pending quicksave/quickload at this lock-free point
+        HALSITL::Scheduler::from(scheduler)->service_checkpoint();
 
         uint32_t now = AP_HAL::millis();
         if (now - last_watchdog_save >= 100 && using_watchdog) {

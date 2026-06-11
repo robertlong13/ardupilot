@@ -83,6 +83,15 @@ void SITL_State::_sitl_setup()
 
 
 /*
+  after a quicksave fork the resumed child is orphaned from its original
+  launcher; aim the parent-death watchdog at ourselves so it can't kill us
+ */
+void SITL_State::checkpoint_orphan(void)
+{
+    _parent_pid = getpid();
+}
+
+/*
   step the FDM by one time step
  */
 void SITL_State::_fdm_input_step(void)
@@ -129,6 +138,9 @@ void SITL_State::wait_clock(uint64_t wait_time_usec)
             Scheduler::from(hal.scheduler)->semaphore_wait_hack_required()) {
             _fdm_input_step();
         } else {
+            // cooperative checkpoint barrier: a non-main thread parks here
+            // (holding no locks) while a quicksave fork is taken on main
+            Scheduler::from(hal.scheduler)->checkpoint_park_point();
 #ifdef CYGWIN_BUILD
             if (speedup > 2 && hal.util->get_soft_armed()) {
                 const char *current_thread = Scheduler::from(hal.scheduler)->get_current_thread_name();

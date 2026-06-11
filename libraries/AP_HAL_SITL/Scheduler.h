@@ -70,6 +70,13 @@ public:
     // get the name of the current thread, or nullptr if not known
     const char *get_current_thread_name(void) const;
 
+    // SITL quicksave/quickload. Requested from any thread (e.g. a MAVLink
+    // handler) and serviced on the main thread at a lock-free point.
+    enum class CheckpointOp : uint8_t { NONE, SAVE, LOAD };
+    void request_checkpoint(CheckpointOp op) { _checkpoint_op = op; }
+    void service_checkpoint();          // call from the top-level loop
+    void checkpoint_park_point();       // called by non-main threads to quiesce
+
 private:
     SITL_State *_sitlState;
     uint8_t _nested_atomic_ctr;
@@ -112,5 +119,19 @@ private:
     };
     static struct thread_attr *threads;
     static const uint8_t stackfill = 0xEB;
+
+    // checkpoint/restore (quicksave/quickload) state
+    static volatile CheckpointOp _checkpoint_op;   // pending request
+    static volatile bool _barrier_engaged;         // helpers must park
+    static volatile uint32_t _threads_parked;      // count at the barrier
+    static pid_t _savepoint_pid;                   // frozen child, or -1
+    static int _restore_pipe[2];                   // wake handle to the child
+
+    void do_quicksave();
+    void do_quickload();
+    void respawn_threads();
+    void reinit_io_after_restore();
+    void freeze_until_restore();
+    uint32_t count_threads();
 };
 #endif  // CONFIG_HAL_BOARD

@@ -9,6 +9,12 @@ extern const AP_HAL::HAL& hal;
 
 using namespace HALSITL;
 
+// registry of all semaphores, used to re-base them after a fork() checkpoint.
+// The head pointer and lock are POD with static initialisers, so they are
+// valid before any constructor runs and are never destroyed (safe at exit).
+HALSITL::Semaphore *Semaphore::_registry;
+static pthread_mutex_t _registry_lock = PTHREAD_MUTEX_INITIALIZER;
+
 // construct a semaphore
 Semaphore::Semaphore()
 {
@@ -16,6 +22,48 @@ Semaphore::Semaphore()
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&_lock, &attr);
+
+    pthread_mutex_lock(&_registry_lock);
+    _reg_next = _registry;
+    _registry = this;
+    pthread_mutex_unlock(&_registry_lock);
+}
+
+Semaphore::~Semaphore()
+{
+    pthread_mutex_lock(&_registry_lock);
+    if (_registry == this) {
+        _registry = _reg_next;
+    } else {
+        for (Semaphore *p = _registry; p != nullptr; p = p->_reg_next) {
+            if (p->_reg_next == this) {
+                p->_reg_next = _reg_next;
+                break;
+            }
+        }
+    }
+    pthread_mutex_unlock(&_registry_lock);
+}
+
+void Semaphore::reinit_after_fork()
+{
+    // Runs on the child's main thread immediately after fork(), while it is
+    // the only thread (helpers are respawned later). Every helper was quiesced
+    // at a lock-free point, so any held semaphore is held by this thread; its
+    // pthread mutex now carries the parent's owner TID. Re-create each mutex
+    // and re-acquire the held ones so this thread becomes the valid owner.
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    for (Semaphore *s = _registry; s != nullptr; s = s->_reg_next) {
+        const uint8_t held = s->take_count;
+        pthread_mutex_init(&s->_lock, &attr);
+        for (uint8_t i = 0; i < held; i++) {
+            pthread_mutex_lock(&s->_lock);
+        }
+        s->owner = (held > 0) ? pthread_self() : (pthread_t)-1;
+        s->take_count = held;
+    }
 }
 
 

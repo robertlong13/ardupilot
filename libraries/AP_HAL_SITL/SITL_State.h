@@ -51,6 +51,11 @@ public:
     
     uint8_t get_instance() const { return _instance; }
 
+    // After a quicksave fork, the resumed savepoint child is orphaned from
+    // its original launcher; point the parent-death watchdog at ourselves so
+    // the kill(_parent_pid,0) check in _fdm_input_step can never kill it.
+    void checkpoint_orphan();
+
 private:
     void _parse_command_line(int argc, char * const argv[]);
     void _usage(void);

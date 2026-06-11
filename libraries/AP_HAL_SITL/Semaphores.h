@@ -11,11 +11,18 @@ class HALSITL::Semaphore : public AP_HAL::Semaphore {
 public:
     friend class HALSITL::BinarySemaphore;
     Semaphore();
+    ~Semaphore();
     bool give() override;
     bool take(uint32_t timeout_ms) override;
     bool take_nonblocking() override;
 
     void check_owner() const;  // asserts that current thread owns semaphore
+
+    // Re-base every SITL semaphore in the child after a fork() checkpoint.
+    // The child's main thread has a new kernel TID, so any pthread mutex held
+    // across the fork has a stale owner and would fail to unlock. Re-create
+    // each mutex and, if it was held, re-acquire it on the calling thread.
+    static void reinit_after_fork();
 
 protected:
     pthread_mutex_t _lock;
@@ -24,6 +31,11 @@ protected:
     // keep track the recursion level to ensure we only disown the
     // semaphore once we're done with it
     uint8_t take_count;
+
+private:
+    // registry of all semaphores, walked by reinit_after_fork()
+    HALSITL::Semaphore *_reg_next;
+    static HALSITL::Semaphore *_registry;
 };
 
 

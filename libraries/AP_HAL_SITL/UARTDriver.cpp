@@ -767,6 +767,18 @@ void UARTDriver::_check_reconnect(void)
     _uart_start_connection();
 }
 
+void UARTDriver::checkpoint_reset_connection(void)
+{
+    // After a SITL quickload the inherited client connection belonged to the
+    // (now exited) parent's session. Drop it but keep the bound listen socket
+    // so MAVProxy/GCS reconnect to us. Only applies to TCP-server ports.
+    if (_listen_fd != -1 && _connected && _fd != -1) {
+        close(_fd);
+        _fd = -1;
+        _connected = false;
+    }
+}
+
 uint16_t UARTDriver::read_from_async_csv(uint8_t *buffer, uint16_t space)
 {
     if (_fd == -1) {

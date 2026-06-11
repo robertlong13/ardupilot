@@ -74,6 +74,10 @@ public:
     void uart_info(ExpandingString &str, StatsTracker &stats, const uint32_t dt_ms) override;
 #endif
 
+    // SITL quicksave/quickload: drop a stale TCP client connection after a
+    // quickload, keeping the bound listen socket so a new GCS can reattach
+    void checkpoint_reset_connection(void);
+
 private:
 
     int _fd;
