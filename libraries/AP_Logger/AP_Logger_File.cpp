@@ -23,6 +23,10 @@
 #include "AP_Logger.h"
 #include "AP_Logger_File.h"
 
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#include <unistd.h>  // for ftruncate() in checkpoint_rewind()
+#endif
+
 #include <AP_Common/AP_Common.h>
 #include <AP_InternalError/AP_InternalError.h>
 #include <AP_RTC/AP_RTC.h>
@@ -876,6 +880,25 @@ bool AP_Logger_File::write_lastlog_file(uint16_t log_num)
     const ssize_t written = AP::FS().write(fd, buf, to_write);
     AP::FS().close(fd);
     return written == to_write;
+}
+
+void AP_Logger_File::checkpoint_rewind(void)
+{
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+    // After a SITL quickload our in-memory _write_offset is frozen at the
+    // quicksave point (copied by fork), but the file on disk is longer - the
+    // parent kept writing through the shared open file description. Seek back
+    // to the saved offset and drop the parent's tail so the log rewinds with
+    // the simulation. SITL fds are real OS fds, so a raw ftruncate is fine.
+    if (_write_fd == -1) {
+        return;
+    }
+    // raw POSIX, not AP::FS(): this runs on the main thread, where
+    // AP_Filesystem forbids file ops (FS_CHECK_ALLOWED). SITL fds are real
+    // OS fds, so seeking/truncating them directly is fine.
+    IGNORE_RETURN(::lseek(_write_fd, _write_offset, SEEK_SET));
+    IGNORE_RETURN(::ftruncate(_write_fd, _write_offset));
+#endif
 }
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL || CONFIG_HAL_BOARD == HAL_BOARD_LINUX

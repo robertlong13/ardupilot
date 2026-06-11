@@ -241,6 +241,10 @@ public:
 
     void PrepForArming();
 
+    // SITL quicksave/quickload: rewind the dataflash log to the saved write
+    // offset and discard the tail appended after the quicksave point
+    void checkpoint_rewind();
+
     void EnableWrites(bool enable) { _writes_enabled = enable; }
     bool WritesEnabled() const { return _writes_enabled; }
 

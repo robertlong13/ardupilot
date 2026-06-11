@@ -187,6 +187,10 @@ public:
 
     virtual void io_timer(void) {}
 
+    // SITL quicksave/quickload: rewind the log to the saved write offset
+    // and discard everything written after it (default: no-op)
+    virtual void checkpoint_rewind(void) {}
+
 protected:
 
     AP_Logger &_front;

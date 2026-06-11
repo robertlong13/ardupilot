@@ -810,6 +810,11 @@ void AP_Logger::WritePrioritisedBlock(const void *pBuffer, uint16_t size, bool i
 void AP_Logger::EraseAll() {
     FOR_EACH_BACKEND(EraseAll());
 }
+
+// SITL quicksave/quickload: rewind the log to the saved write offset
+void AP_Logger::checkpoint_rewind() {
+    FOR_EACH_BACKEND(checkpoint_rewind());
+}
 // change me to "LoggingAvailable"?
 bool AP_Logger::CardInserted(void) {
     for (uint8_t i=0; i< _next_backend; i++) {
