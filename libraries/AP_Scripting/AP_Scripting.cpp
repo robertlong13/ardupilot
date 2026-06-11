@@ -301,28 +301,38 @@ void AP_Scripting::thread(void) {
         _restart = false;
         _init_failed = false;
 
-        lua_scripts *lua = NEW_NOTHROW lua_scripts(_script_vm_exec_count, _script_heap_size, _debug_options);
-        if (lua == nullptr || !lua->heap_allocated()) {
-            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Scripting: %s", "Unable to allocate memory");
-            _init_failed = true;
-        } else {
-#if AP_SCRIPTING_SERIALDEVICE_ENABLED
-            // clear data in serial buffers that the script wasn't ready to
-            // receive
-            _serialdevice.clear();
-#endif
-#if AP_ARMING_ENABLED && AP_ARMING_AUX_AUTH_ENABLED
-            // Clear any dangling pre-arms from previous script loads
-            AP_Arming::get_singleton()->reset_all_aux_auths();
-#endif
-            // run won't return while scripting is still active
-            lua->run();
+        if (_lua != nullptr) {
+            // Re-entered after a SITL quicksave/quickload fork: the VM and all
+            // script state are intact in fork-preserved heap memory. Resume the
+            // scheduling loop rather than rebuilding the VM (see lua_scripts::resume).
+            _lua->resume();
 
             // only reachable if the lua backend has died for any reason
             GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Scripting: %s", "stopped");
+        } else {
+            _lua = NEW_NOTHROW lua_scripts(_script_vm_exec_count, _script_heap_size, _debug_options);
+            if (_lua == nullptr || !_lua->heap_allocated()) {
+                GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Scripting: %s", "Unable to allocate memory");
+                _init_failed = true;
+            } else {
+#if AP_SCRIPTING_SERIALDEVICE_ENABLED
+                // clear data in serial buffers that the script wasn't ready to
+                // receive
+                _serialdevice.clear();
+#endif
+#if AP_ARMING_ENABLED && AP_ARMING_AUX_AUTH_ENABLED
+                // Clear any dangling pre-arms from previous script loads
+                AP_Arming::get_singleton()->reset_all_aux_auths();
+#endif
+                // run won't return while scripting is still active
+                _lua->run();
+
+                // only reachable if the lua backend has died for any reason
+                GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Scripting: %s", "stopped");
+            }
         }
-        delete lua;
-        lua = nullptr;
+        delete _lua;
+        _lua = nullptr;
 
         // clear allocated i2c devices
         for (uint8_t i=0; i<SCRIPTING_MAX_NUM_I2C_DEVICE; i++) {

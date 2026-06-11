@@ -45,6 +45,8 @@ class SocketAPM;
 #include "AP_Scripting_SerialDevice.h"
 #endif
 
+class lua_scripts;
+
 class AP_Scripting
 {
 public:
@@ -166,6 +168,11 @@ public:
 private:
 
     void thread(void); // main script execution thread
+
+    // the script VM. Held as a member (not a thread local) so that after a
+    // SITL fork checkpoint the respawned thread can find the preserved VM
+    // and resume it rather than rebuilding from scratch. nullptr when no VM.
+    lua_scripts *_lua = nullptr;
 
     // Check if DEBUG_OPTS bit has been set to save current checksum values to params
     void save_checksum();

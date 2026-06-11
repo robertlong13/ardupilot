@@ -54,6 +54,11 @@ public:
     // run scripts, does not return unless an error occured
     void run(void);
 
+    // SITL quickload: re-enter the scheduling loop on the fork-preserved VM
+    // instead of building a fresh one, so all script state is retained.
+    // Does not return unless scripting stops.
+    void resume(void);
+
     static bool overtime; // script exceeded it's execution slot, and we are bailing out
 
 private:
@@ -62,6 +67,15 @@ private:
         return ls_object_from_state(L)->run_engine(L);
     };
     int run_engine(lua_State *L);
+
+    // the scheduling loop, extracted from run_engine so it can be re-entered
+    // directly (plain C, no enclosing pcall) by resume() after a quickload.
+    // Each script is still protected by its own pcall in run_next_script().
+    void run_loop(lua_State *L);
+
+    // close the VM and free the engine list/error buffer (shared teardown
+    // for run() and resume())
+    void cleanup(void);
 
     void create_sandbox(lua_State *L);
 
@@ -88,6 +102,8 @@ private:
     void reschedule_script(script_info *script);
 
     script_info *scripts; // linked list of scripts to be run, sorted by next run time (soonest first)
+
+    lua_State *_L = nullptr; // the VM; heap-backed, so it survives a SITL fork checkpoint
 
     // hook will be run when CPU time for a script is exceeded
     // it must be static to be passed to the C API

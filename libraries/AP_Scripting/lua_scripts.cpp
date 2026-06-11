@@ -481,27 +481,46 @@ void lua_scripts::run(void) {
         return;
     }
 
-    lua_State *L = lua_newstate(alloc, NULL);
-    if (L == nullptr) {
+    _L = lua_newstate(alloc, NULL);
+    if (_L == nullptr) {
         GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Lua: Couldn't allocate a lua state");
         return;
     }
     // initialize the state with a pointer to us for ls_* callback trampolines
     // (see ls_object_from_state)
-    *static_cast<lua_scripts**>(lua_getextraspace(L)) = this;
+    *static_cast<lua_scripts**>(lua_getextraspace(_L)) = this;
 
     // call main engine function in protected mode now that Lua itself is ready.
     // this catches any errors raised by the code between here and Lua scripts.
     // our current function must not use any Lua API which can raise an error!
-    lua_pushcfunction(L, &ls_run_engine);
-    if (lua_pcall(L, 0, 0, 0) != LUA_OK) { // no args, returns, or msg handler
+    lua_pushcfunction(_L, &ls_run_engine);
+    if (lua_pcall(_L, 0, 0, 0) != LUA_OK) { // no args, returns, or msg handler
         set_and_print_new_error_message(MAV_SEVERITY_CRITICAL,
-            "Engine Error: %s", get_error_object_message(L));
+            "Engine Error: %s", get_error_object_message(_L));
     }
     // we are now finished with Lua, tear everything down
+    cleanup();
+}
 
-    lua_close(L); // shut down the state
-    L = nullptr;
+void lua_scripts::resume(void) {
+    // SITL quickload: the VM (_L), the scripts list and every script's Lua
+    // state were preserved across the fork. Re-enter the scheduling loop
+    // directly - plain C, no enclosing pcall - so we neither reload scripts
+    // nor leave a stale outer pcall frame behind. Each script is still
+    // protected by its own pcall inside run_next_script().
+    if (_L == nullptr) {
+        return;
+    }
+    run_loop(_L);
+    // scripting has stopped, tear everything down as run() does
+    cleanup();
+}
+
+void lua_scripts::cleanup(void) {
+    if (_L != nullptr) {
+        lua_close(_L); // shut down the state
+        _L = nullptr;
+    }
 
     while (scripts != nullptr) { // remove all scripts from the engine list
         remove_script(nullptr, scripts);
@@ -555,6 +574,12 @@ int lua_scripts::run_engine(lua_State *L) {
         GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Lua: All directory's disabled see SCR_DIR_DISABLE");
     }
 
+    run_loop(L);
+
+    return 0; // no results
+}
+
+void lua_scripts::run_loop(lua_State *L) {
     uint32_t expansion_size = 0;
 
     while (AP_Scripting::get_singleton()->should_run()) {
@@ -652,8 +677,6 @@ int lua_scripts::run_engine(lua_State *L) {
             print_error_count++;
         }
     }
-
-    return 0; // no results
 }
 
 // Return the file checksums of running and loaded scripts
