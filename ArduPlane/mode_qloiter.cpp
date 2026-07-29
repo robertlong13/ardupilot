@@ -7,7 +7,23 @@ bool ModeQLoiter::_enter()
 {
     // initialise loiter
     loiter_nav->clear_pilot_desired_acceleration();
-    loiter_nav->init_target();
+    if (AP_HAL::millis() - quadplane.last_att_control_ms > 100) {
+        // entering from fixed-wing flight: the VTOL attitude
+        // controller's target is stale, so don't let the loiter
+        // controller initialise from it; initialise for a stationary
+        // loiter at the current position so the vehicle brakes
+        // wings-level instead.  The position error limit drags the
+        // target along while braking, so the vehicle holds wherever
+        // it stops.
+        loiter_nav->init_target_m(pos_control->get_pos_estimate_NED_m().xy());
+        // the controller init seeds the velocity PID integrator from
+        // the stale attitude target for a bumpless transfer; re-seed
+        // it for a pure brake from the current velocity
+        auto &vel_pid = pos_control->NE_get_vel_pid();
+        vel_pid.set_integrator(-pos_control->get_vel_estimate_NED_ms().xy() * vel_pid.ff());
+    } else {
+        loiter_nav->init_target();
+    }
 
     // set vertical speed and acceleration limits
     // All limits must be positive
