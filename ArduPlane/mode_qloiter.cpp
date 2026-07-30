@@ -5,6 +5,13 @@
 
 bool ModeQLoiter::_enter()
 {
+    if (AP_HAL::millis() - quadplane.last_att_control_ms > 100) {
+        // entering from fixed-wing flight: the VTOL attitude controller's
+        // target is stale, frozen since VTOL was last active, and the loiter
+        // controller below initializes its acceleration target from it.
+        attitude_control->reset_target_level_and_rate();
+    }
+
     // initialise loiter
     loiter_nav->clear_pilot_desired_acceleration();
     loiter_nav->init_target();
