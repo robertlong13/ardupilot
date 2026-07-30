@@ -1262,6 +1262,20 @@ void AC_AttitudeControl::reset_target_and_rate(bool reset_rate)
     }
 }
 
+// Sets the attitude target to level, at the current heading, and zero the angular rate targets.
+// For taking over a controller whose target is not being actively flown, e.g. a quadplane
+// dropping in to VTOL from a fixed-wing maneuver.
+void AC_AttitudeControl::reset_target_level_and_rate()
+{
+    // move attitude target to level at the current heading
+    _attitude_target.from_euler(0.0f, 0.0f, _ahrs.yaw);
+    _attitude_target.to_euler(_euler_angle_target_rad);
+
+    _ang_vel_target_rads.zero();
+    _ang_accel_target_rads.zero();
+    _euler_rate_target_rads.zero();
+}
+
 // Sets yaw target to vehicle heading and sets yaw rate to zero
 // If reset_rate is false rates are not reset to allow the rate controllers to run
 void AC_AttitudeControl::reset_yaw_target_and_rate(bool reset_rate)

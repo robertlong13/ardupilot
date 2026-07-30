@@ -161,6 +161,11 @@ public:
     // If reset_rate is false, only the attitude target is reset and current rate targets are preserved.
     void reset_target_and_rate(bool reset_rate = true);
 
+    // Sets the attitude target to level, at the current heading, and zero the angular rate targets.
+    // For taking over a controller whose target is not being actively flown, e.g. a quadplane
+    // dropping in to VTOL from a fixed-wing maneuver.
+    void reset_target_level_and_rate();
+
     // Sets the yaw angle target to the vehicle's current heading. Optionally resets yaw rate to zero.
     void reset_yaw_target_and_rate(bool reset_rate = true);
 
